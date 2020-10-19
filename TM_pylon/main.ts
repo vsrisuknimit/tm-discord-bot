@@ -41,15 +41,22 @@ const CHANNELID_gametalk = '742826825922904225';
 const CHANNELID_gameresult = '746828659150684251';
 const CHANNELID_tournament = '749499857240195133';
 const CHANNELID_searchzone = '751040806386663456';
+const CHANNELID_BETA = '750397135609921549';
+const CHANNELID_CHANGELOG = '763150891498733599';
+
+const CATEGORYID_CHATROOMS = '742838021103157428';
 
 const GUILDID_TFMARS_WEB_APP = '737945098695999559';
 
 const ROLE_ASSIGNMENT_MESSAGE_ID = '753188826092142604';
+const ROLEID_TMWEBDEV = '742723586200043540';
 const ROLEID_BEGINNER = '748467469001424937';
 const ROLEID_INTERMEDIATE = '748467638916874302';
 const ROLEID_EXPERIENCED = '748467689193865253';
 const ROLEID_LIFEFINDER = '750320147088015360';
+const ROLEID_LIFEGATHERER = '756132629249654804';
 const ROLEID_HERALD = '752880241084596324';
+const ROLEID_ADMIN = '739779495988559922';
 
 const COMMAND_COOLDOWN = 60;
 const COMMAND_COOLWARNING =
@@ -84,7 +91,10 @@ import {
   HELP_POSITIVEEVENTS,
   HELP_BETA,
   HELP_INFLUENCE,
-  HELP_DEMO
+  HELP_MAIN,
+  HELP_TOURNY,
+  HELP_COMMUNITYCARDS,
+  HELP_ARES
 } from './helptext';
 
 // import fuzzysort written by farzher at https://github.com/farzher/fuzzysort
@@ -106,10 +116,12 @@ commands.on(
     name: 'card'
   },
   (args) => ({
-    input: args.text()
+    cardName: args.text()
   }),
-  async (message, { input }) => {
-    const cardQuery = input.toLowerCase();
+  async (message, { cardName }) => {
+    cardName = cardName.replace(/"/g, '');
+    const cardQuery = cardName.toLowerCase();
+
     // Check if there is an exact match
     if (cardID.has(cardQuery)) {
       // Get the url to my github card images
@@ -256,7 +268,7 @@ commands.subcommand(
           );
           const randomCard =
             cardNames[Math.floor(Math.random() * totalProjectCards)];
-          //const randomCard = 'search for life';
+          //const randomCard = 'regolith eaters';
           const geturl =
             'https://github.com/vsrisuknimit/tm-discord-bot/blob/master/TM_cards/' +
             cardID.get(randomCard) +
@@ -265,6 +277,7 @@ commands.subcommand(
             '.png?raw=true';
           console.log('Your random card is ' + randomCard);
           var title = '';
+          var congrat = false;
           // Put in list of winner
           if (microbeCards.includes(randomCard)) {
             title =
@@ -272,11 +285,20 @@ commands.subcommand(
               microbeEmoji +
               sciEmoji;
 
+            congrat = true;
             // Assign a new role
             const guildMember = await discord
               .getGuild(GUILDID_TFMARS_WEB_APP)
               .then((c) => c?.getMember(message.author.id));
             await guildMember.addRole(ROLEID_LIFEFINDER);
+
+            if (guildMember.roles.includes(ROLEID_LIFEFINDER)) {
+              title =
+                `${message.author.username} found life more than ONCE! ` +
+                microbeEmoji +
+                sciEmoji;
+              await guildMember.addRole(ROLEID_LIFEGATHERER);
+            }
 
             if (!winnerList.list.includes(message.author.id)) {
               winnerList.list.push(message.author.id);
@@ -315,6 +337,10 @@ commands.subcommand(
           richEmbed.setColor(0xffffff);
           await message.reply({ content: '', embed: richEmbed });
 
+          if (congrat == true) {
+            message.reply('🥳 🎊 Congrats!');
+          }
+
           await commandKV.put('search', {
             lastUseAt: 'no_url',
             lastUseWhen: Date.now()
@@ -328,7 +354,41 @@ commands.subcommand(
     );
   }
 );
+// 0 2 0/3 * * * *
+// A cron task to wipe the chat channel every 6 hours.
+pylon.tasks.cron('channel-cleaner', '0 2 0/6 * * * *', async () => {
+  console.log('log every 6 hours to clean up a channel');
+  const currentRooms = await chatRoomKV.items();
+  const currentTime = Date.now();
+  const webappGuild = await discord.getGuild(GUILDID_TFMARS_WEB_APP);
+  for (let room of currentRooms) {
+    var dif = currentTime - room.value.lastChat;
+    dif /= 60 * 1000; //translate to minutes
+    // Check if any room has to chat in the last one hour and a half
+    if (dif > 180) {
+      const channel = await discord.getGuildTextChannel(room.key);
 
+      // Create a new channel
+      const newChannel = await webappGuild.createChannel({
+        name: channel.name,
+        position: channel.position,
+        parentId: channel.parentId,
+        type: discord.Channel.Type.GUILD_TEXT
+      });
+
+      // Add to the KV
+      await chatRoomKV.put(newChannel.id, { lastChat: 0 });
+
+      // Remove from the KV
+      await chatRoomKV.delete(room.key);
+
+      // Delete the old channel
+      await channel.delete();
+    }
+  }
+});
+
+// A cron task to wipe the search history every 6 hours
 pylon.tasks.cron('search-cleaner', '0 0 0/6 * * * *', async () => {
   console.log('log every 6 hours to clean up period searchers');
   const winners = await searchforlifeKV.get('winners');
@@ -342,16 +402,123 @@ pylon.tasks.cron('search-cleaner', '0 0 0/6 * * * *', async () => {
   );
 });
 
-commands.raw('changelog', async (message) => {
-  message.reply(HELP_CHANGELOG);
-});
+const betaKV = new pylon.KVNamespace('beta');
 
-commands.raw('beta', async (message) => {
-  message.reply(HELP_BETA);
+commands.subcommand(
+  {
+    name: 'beta'
+  },
+  (subcommand) => {
+    subcommand.on(
+      {
+        name: 'set',
+        filters: F.or(F.hasRole(ROLEID_TMWEBDEV), F.hasRole(ROLEID_ADMIN))
+      },
+      (args) => ({
+        betaURL: args.string(),
+        betaComment: args.text()
+      }),
+      async (message, { betaURL, betaComment }) => {
+        // Save the tag to the database.
+        await betaKV.put('url', { url: betaURL, comment: betaComment });
+        // Reply to the user to say we've saved their tag. We're also using the `allowedMentions` feature here,
+        // to make sure thet the message won't mention anyone, for example, if they made the tag key "@everyone",
+        // it wouldn't ping everyone with `allowedMentions: {}`.
+        await message.reply({
+          content: `Alright, I've set the new beta URL to **${betaURL}**! We are testing ${betaComment}.`
+        });
+      }
+    );
+
+    subcommand.raw(
+      { name: 'open', filters: F.hasRole(ROLEID_TMWEBDEV) },
+      async (message) => {
+        const betaKVItem = await betaKV.get('url');
+        const betaChannel = await discord.getTextChannel(CHANNELID_BETA);
+        await betaChannel.sendMessage(
+          `Beta testing is now OPEN. 🧪 We are testing ${betaKVItem.comment}`
+        );
+        await betaChannel.edit({ name: 'beta-testing-🧪-OPEN' });
+      }
+    );
+
+    subcommand.raw(
+      { name: 'close', filters: F.hasRole(ROLEID_TMWEBDEV) },
+      async (message) => {
+        const betaChannel = await discord.getTextChannel(CHANNELID_BETA);
+        await betaChannel.sendMessage('Beta testing is now CLOSED. 🏖️');
+        await betaChannel.edit({ name: 'beta-testing-🏖️-OFF' });
+      }
+    );
+
+    subcommand.default(
+      (ctx) => ({}),
+      async (message) => {
+        const betaURL = await betaKV.get('url');
+        message.reply(
+          `The current beta server is ${betaURL.url}\nWe are testing ${betaURL.comment}.`
+        );
+      }
+    );
+  }
+);
+
+commands.raw('main', async (message) => {
+  message.reply(HELP_MAIN);
 });
 
 commands.raw('demo', async (message) => {
-  message.reply(HELP_DEMO);
+  message.reply('Use the command `$main` or `$server` instead.');
+});
+
+commands.raw({ name: 'tournament', aliases: ['tourny'] }, async (message) => {
+  message.reply(HELP_TOURNY);
+});
+
+commands.raw('crash', async (message) => {
+  const serverStatusKVItem = await serverStatusKV.get('lastUpdateMessage');
+  const lastUpdateTime = serverStatusKVItem.last_update_time;
+  let diff = Date.now() - lastUpdateTime;
+  diff /= 60 * 1000; // turn to minutes
+  await message.reply('Did the main demo server crash?');
+  if (diff <= 45) {
+    await message.reply('There was a recent update to the code base.');
+    // Construct the rich embed
+    const serverStatusKVItem = await serverStatusKV.get('lastUpdateMessage');
+    const richEmbed = new discord.Embed();
+    richEmbed.setColor(7506394);
+    richEmbed.addField({
+      name: 'Server Status',
+      value: `[\`#${serverStatusKVItem.commitNumber}\`](${serverStatusKVItem.commitURL})`,
+      inline: false
+    });
+    richEmbed.setFooter({
+      text: 'Last update: '
+    });
+    const lastupdateTimeDate = new Date(lastUpdateTime);
+    richEmbed.setTimestamp(lastupdateTimeDate.toISOString());
+    // Reply with the rich embed.
+    await message.reply({ content: '', embed: richEmbed });
+  } else {
+    await message.reply('There was no update recently.');
+  }
+});
+
+commands.raw({ name: 'community' }, async (message) => {
+  message.reply(HELP_COMMUNITYCARDS);
+});
+
+commands.raw({ name: 'ares' }, async (message) => {
+  message.reply(HELP_ARES);
+});
+
+commands.raw({ name: 'fanmade', aliases: ['fan-made'] }, async (message) => {
+  message.reply(HELP_COMMUNITYCARDS);
+  message.reply(HELP_ARES);
+});
+
+commands.raw('draft', async (message) => {
+  message.reply(HELP_DRAFT);
 });
 
 //coin flip
@@ -390,11 +557,7 @@ commands.on(
       F.isChannelId(CHANNELID_generalchat),
       F.isChannelId(CHANNELID_gametalk),
       F.isChannelId(CHANNELID_lfg),
-      F.isChannelId(CHANNELID_phobos),
-      F.isChannelId(CHANNELID_deimos),
-      F.isChannelId(CHANNELID_europa),
-      F.isChannelId(CHANNELID_ganymede),
-      F.isChannelId(CHANNELID_titan)
+      F.isChannelId(CHANNELID_tournament)
     )
   },
   (args) => ({
@@ -562,8 +725,8 @@ commands.subcommand(
       await message.reply(HELP_DRAFT);
     });
 
-    subcommand.raw({ name: 'demo', aliases: ['server'] }, async (message) => {
-      await message.reply(HELP_DEMO);
+    subcommand.raw({ name: 'main', aliases: ['server'] }, async (message) => {
+      await message.reply(HELP_MAIN);
     });
 
     subcommand.raw({ name: 'weather' }, async (message) => {
@@ -576,6 +739,16 @@ commands.subcommand(
 
     subcommand.raw({ name: 'music' }, async (message) => {
       await message.reply(HELP_MUSIC);
+    });
+
+    subcommand.raw({ name: 'notification' }, async (message) => {
+      const richEmbed = new discord.Embed();
+      richEmbed.setTitle('How to turn on the web app notification');
+      richEmbed.setColor(0x000000);
+      richEmbed.setImage({
+        url: 'https://i.imgur.com/uJWGcto.png'
+      });
+      await message.reply({ content: '', embed: richEmbed });
     });
 
     subcommand.raw({ name: 'search' }, async (message) => {
@@ -889,7 +1062,18 @@ discord.on('MESSAGE_REACTION_REMOVE', async (evt) => {
 });
 
 // Array of number emojis
-const numberChoices = ['1️⃣', '2️⃣', '3️⃣', '4️⃣'];
+const numberChoices = [
+  '1️⃣',
+  '2️⃣',
+  '3️⃣',
+  '4️⃣',
+  '5️⃣',
+  '6️⃣',
+  '7️⃣',
+  '8️⃣',
+  '9️⃣',
+  '🔟'
+];
 
 // Declared this previously const F = discord.command.filters;
 // Poll function
@@ -919,9 +1103,9 @@ commands.on(
 
     // Construct the poll
     var pollMessage;
-    if (argsArray.length > 5) {
+    if (argsArray.length > 11) {
       pollMessage = await message.reply(
-        'Only four answers or fewer are allowed.'
+        'Only ten answers or fewer are allowed.'
       );
     } else if (argsArray.length == 1) {
       pollMessage = await message.reply('📊 Poll: ' + argsArray[0]);
@@ -1145,82 +1329,38 @@ commands.raw(
   }
 );
 
-// A key value store is to record active rooms.
-const gameEndKV = new pylon.KVNamespace('game end detection');
+// A key value store to remember the last update
+const serverStatusKV = new pylon.KVNamespace('server status');
 
-// A command to initiate room order
-commands.raw(
-  {
-    name: 'gameEndInit',
-    filters: discord.command.filters.canManageChannels()
-  },
-  async (message) => {
-    gameEndKV.clear();
-    await message.reply('Reinitate game end detection');
-    gameEndKV.put('lastGG_check', {
-      lastTyper: '0000',
-      lastIn: 0,
-      lastOut: 0,
-      lastChannel: message.channelId,
-      lastOutChannel: message.channelId
-    });
-  }
-);
-
-// A list of commands response to certain message.
+const CHANNELID_GITHUB = '763003909005639681';
+const CHANNELID_ANNOUNCEMENT = '743789409396195329';
+const WEBHOOKID_GITHUB = '763003577823133696';
+// Update the status if merge pull request detected
 discord.on('MESSAGE_CREATE', async (message) => {
-  // If sentence starts containing text about end game and in the chat rooms.
+  // Only response if the channel is github
   if (
-    CHATROOMS.includes(message.channelId) ||
-    message.channelId == CHANNELID_botTest
+    message.channelId === CHANNELID_GITHUB &&
+    message.webhookId === WEBHOOKID_GITHUB
   ) {
-    const ggText = message.content.toLowerCase();
-    const ggRegexp = /\bgg\b/gi;
-    const wpRegexp = /\bwp\b/gi;
-    if (
-      ggRegexp.test(ggText) ||
-      wpRegexp.test(ggText) ||
-      ggText.includes('well play') ||
-      ggText.includes('good game')
-    ) {
-      console.log('gg text detected in one of the chat rooms.');
-      console.log('message was: ' + message.content);
-      const ggItem = await gameEndKV.get('lastGG_check');
-      const sinceLastIn = (Date.now() - ggItem.lastIn) / (60 * 1000);
-      const sinceLastOut = (Date.now() - ggItem.lastOut) / (60 * 1000);
-      var newOutChannel = ggItem.lastOutChannel;
-      var newLastOut = ggItem.lastOut;
-      // If two gg in the same channel by two different people
-      if (
-        message.channelId == ggItem.lastChannel &&
-        message.author.id != ggItem.lastTyper
-      ) {
-        console.log('gg text detected by different user in the same channel.');
-        console.log(
-          'Time since someone post gg in this channel: ' + sinceLastIn
-        );
-        console.log('Time since Curiosity answer gg: ' + sinceLastOut);
-        //Two gg messages have to be within 3 minutes, last pylon gg message needs to be longer than 15 minutes or out in a different channel
-        if (
-          sinceLastIn < 3 &&
-          (sinceLastOut > 15 || ggItem.lastOutChannel != message.channelId)
-        ) {
-          console.log(
-            'gg typed by different user within 3 minutes and the program answer more than 15 minutes ago in this channel.'
-          );
-          await message.reply(
-            `I hope you all had a great game. Feel free post the result to: <#${CHANNELID_gameresult}>.`
-          );
-          newLastOut = Date.now();
-          newOutChannel = message.channelId;
-        }
-      }
-      gameEndKV.put('lastGG_check', {
-        lastTyper: message.author.id,
-        lastIn: Date.now(),
-        lastOut: newLastOut,
-        lastChannel: message.channelId,
-        lastOutChannel: newOutChannel
+    const embed = message.embeds[0];
+    const gitUpdateString = embed.description;
+    console.log(gitUpdateString);
+
+    // Extract data from Github webhook
+    const myRegexp = /\[\`(.*)\`\]\((.*)\) Merge pull request #([0-9]+)/g;
+    const match = myRegexp.exec(gitUpdateString);
+
+    console.log(match);
+
+    // If the update contains merge pull request, match[3] = prNumber
+    if (match != null) {
+      await message.reply('Merge Pull Request detected.');
+
+      // Update the KV
+      await serverStatusKV.put('lastUpdateMessage', {
+        commitNumber: match[1],
+        commitURL: match[2],
+        last_update_time: Date.now()
       });
     }
   }
@@ -1263,29 +1403,73 @@ discord.on('MESSAGE_CREATE', async (message) => {
       await message.addReaction('⚫');
       await message.addReaction('🟣');
     }
+  } else if (textmessage.includes('what expansion?')) {
+    if (
+      CHATROOMS.includes(message.channelId) ||
+      message.channelId == CHANNELID_botTest
+    ) {
+      await message.addReaction('exp_prelude:743207309936689282');
+      await message.addReaction('exp_venus:743207309723041823');
+      await message.addReaction('exp_colony:743207309894877265');
+      await message.addReaction('exp_turmoil:743207309525909597');
+      await message.addReaction('exp_promo:743207309903265891');
+    }
   } else if (
     textmessage.includes('need') ||
     textmessage.includes('brb') ||
     (textmessage.includes('afk') && textmessage.includes('min'))
   ) {
-    if (
-      CHATROOMS.includes(message.channelId) ||
-      message.channelId == CHANNELID_botTest ||
-      message.channelId == CHANNELID_lfg
-    ) {
-      const myRegexp = /(need|needs|brb|afk)\ (\d+)\ min/gi;
-      const match = myRegexp.exec(textmessage);
-      console.log(match);
-      if (match != null) {
-        const minString = match[2];
-        const minInt = parseInt(minString);
-        if (minInt >= 3) {
-          await timerSet(message, minInt);
-        }
+    const myRegexp = /(need|needs|brb|afk)\ (\d+)\ min/gi;
+    const match = myRegexp.exec(textmessage);
+    console.log(match);
+    if (match != null) {
+      const minString = match[2];
+      const minInt = parseInt(minString);
+      if (minInt >= 3) {
+        await timerSet(message, minInt);
       }
     }
   }
 });
+
+// A key value store is to record active rooms.
+const chatRoomKV = new pylon.KVNamespace('chat rooms');
+
+// A command to initiate room order
+commands.raw(
+  {
+    name: 'chatRoomInit',
+    filters: discord.command.filters.canManageChannels()
+  },
+  async (message) => {
+    await message.reply('Initiating Chat Rooms');
+    chatRoomKV.clear();
+    chatRoomKV.put(CHANNELID_ganymede, { name: 'ganymede', lastChat: 0 });
+    chatRoomKV.put(CHANNELID_deimos, { name: 'deimos', lastChat: 0 });
+    chatRoomKV.put(CHANNELID_phobos, { name: 'phobos', lastChat: 0 });
+    chatRoomKV.put(CHANNELID_europa, { name: 'europa', lastChat: 0 });
+    chatRoomKV.put(CHANNELID_titan, { name: 'titan', lastChat: 0 });
+  }
+);
+
+commands.raw({ name: 'getroom' }, async (message) => {
+  await message.reply(await getRoom());
+});
+
+async function getRoom() {
+  const currentRooms = await chatRoomKV.items();
+  var time = Infinity;
+  var quietRoom = '';
+  for (let room of currentRooms) {
+    console.log(room.key);
+    console.log(room.value.lastChat);
+    if (room.value.lastChat < time) {
+      time = room.value.lastChat;
+      quietRoom = room.key;
+    }
+  }
+  return quietRoom;
+}
 
 // A key value store is to record active rooms.
 const roomKV = new pylon.KVNamespace('active rooms');
@@ -1318,14 +1502,19 @@ discord.on('MESSAGE_CREATE', async (message) => {
   // If the message is in the channel ID
   const channel = message.channelId;
   if (CHATROOMS.includes(channel)) {
-    console.log('Message sent in the one of chat rooms');
     const chatroomObject = await roomKV.get('chatroom');
     const newOrder = chatroomObject.roomOrder;
     // Move the most recent messaged chat room to the last of the list.
     newOrder.push(newOrder.splice(newOrder.indexOf(channel), 1)[0]);
-    console.log('Here is the new order:');
-    console.log(newOrder);
     await roomKV.put('chatroom', { roomOrder: newOrder });
+  }
+
+  const currentRooms = await chatRoomKV.list();
+  //console.log(currentRooms);
+  //console.log(channel);
+  if (currentRooms.includes(channel)) {
+    //console.log('message sent in the chatroom');
+    await chatRoomKV.put(channel, { lastChat: Date.now() });
   }
 });
 
@@ -1361,6 +1550,9 @@ commands.subcommand(
       { name: 'room' },
       async (message) => {
         // Obtain current room order
+        const roomToUse = await getRoom();
+        await chatRoomKV.put(roomToUse, { lastChat: Date.now() });
+        /*
         const chatroomObject = await roomKV.get('chatroom');
         const newOrder = chatroomObject.roomOrder;
         // Pick the least active room in the front
@@ -1369,6 +1561,7 @@ commands.subcommand(
         newOrder.push(newOrder.splice(newOrder.indexOf(roomToUse), 1)[0]);
         // Update the KV
         await roomKV.put('chatroom', { roomOrder: newOrder });
+        */
         await message.reply(
           `Here is the quietest room for you: <#${roomToUse}>`
         );
@@ -1392,9 +1585,11 @@ commands.subcommand(
         playercount: args.integerOptional()
       }),
       async (message, { playercount }) => {
-        playercount = playercount ?? 3;
+        playercount = playercount ?? 34;
+        const playercountString =
+          playercount === 34 ? '3 or 4' : String(playercount);
         await message.reply(
-          `Let's do an everything preset lfg with ${playercount} players.`
+          `Let's do an everything preset lfg with ${playercountString} players.`
         );
         // reply to the command with our embed
         await lfgPost(message, playercount, 'all', 'all');
@@ -1530,6 +1725,9 @@ discord.on('MESSAGE_REACTION_ADD', async (evt) => {
           time: kvItem.time,
           playerWant: kvItem.playerWant,
           playerHave: newCount,
+          flexible: kvItem.flexible,
+          expansions: kvItem.expansions,
+          custom: kvItem.custom,
           signers: newSigners
         });
         console.log('Here is the updated kv item after adding the player.');
@@ -1544,14 +1742,7 @@ discord.on('MESSAGE_REACTION_ADD', async (evt) => {
           }
 
           // Obtain current room order
-          const chatroomObject = await roomKV.get('chatroom');
-          const newOrder = chatroomObject.roomOrder;
-          // Pick the least active room in the front
-          const roomToUse = newOrder[0];
-          // Move the this room to the last of the list.
-          newOrder.push(newOrder.splice(newOrder.indexOf(roomToUse), 1)[0]);
-          // Update the KV
-          await roomKV.put('chatroom', { roomOrder: newOrder });
+          const roomToUse = await getRoom();
 
           await message.reply(
             'We have reached our quorum, ' +
@@ -1570,7 +1761,113 @@ discord.on('MESSAGE_REACTION_ADD', async (evt) => {
             lastUseAt: roomToUse,
             lastUseWhen: Date.now()
           });
-          await setupConstruct(welcomeMessage);
+          await setupConstruct(
+            welcomeMessage,
+            kvItem.expansions,
+            kvItem.custom
+          );
+
+          // Add a thumbnail
+          lfgEmbed.setTitle('Off to Mars!');
+
+          // Add a thumbnail
+          lfgEmbed.setThumbnail({ url: 'https://i.imgur.com/7E6udf6.jpg' });
+
+          // Update the footer
+          lfgEmbed.setFooter({
+            text:
+              'Quorum has been reached. This LFG message is no longer active. | Launched on '
+          });
+
+          lfgEmbed.setTimestamp(new Date().toISOString());
+
+          await message.edit(lfgEmbed);
+
+          await message.deleteAllReactions();
+
+          // Remove from kv list
+          await lfgCheckKV.delete(message.id);
+        }
+      } else {
+        console.log('The player is already in the list. No action is taken.');
+      }
+    }
+  } else if (
+    evt.emoji.name === '🚀' &&
+    (evt.channelId == CHANNELID_lfg || evt.channelId == CHANNELID_botTest) &&
+    evt.userId != USERID_PYLON
+  ) {
+    // First get the message that is being react to
+    const message = await discord
+      .getGuildTextChannel(evt.channelId)
+      .then((c) => c?.getMessage(evt.messageId));
+
+    // Next get the list of messageid from lfgCheckKV
+    const keyList = await lfgCheckKV.list();
+
+    // Only do this command if the reacted message is one of lfg messages in the KV
+    if (keyList.includes(message.id)) {
+      console.log('Reacted message is in the list.');
+
+      // Retrieve the reactor
+      const reactor = await discord.getUser(evt.userId);
+      console.log('Reactor ID');
+      console.log(reactor.id);
+
+      // Clear everything except the choice.
+      await message.deleteReaction('🚀', reactor.id);
+
+      // Retrieve the JSON
+      const kvItem = await lfgCheckKV.get(message.id);
+      console.log('kvItem');
+      console.log(kvItem);
+
+      console.log('playerWant = ' + kvItem.playerWant);
+      console.log('playerHave = ' + kvItem.playerHave);
+
+      console.log('kvSigners');
+      console.log(kvItem.signers); //test
+
+      // Only attempt to add a name if the reactor is not already in the list of signers
+      if (kvItem.signers.includes(reactor.id)) {
+        console.log('Rocket adder in the list.');
+        if (kvItem.playerHave != 1) {
+          console.log('We are one short of quorum.');
+          var signupPlayers = '';
+          for (let playerid of kvItem.signers) {
+            const player = await discord.getUser(playerid);
+            signupPlayers += player.toMention() + ' ';
+          }
+
+          // Obtain current room order
+          const roomToUse = await getRoom();
+
+          await message.reply(
+            'We have reached our quorum, ' +
+              signupPlayers +
+              "! Let's move to <#" +
+              roomToUse +
+              '> and play!'
+          );
+
+          // Welcome to new room and send a message.
+          const roomChannel = await discord.getTextChannel(roomToUse);
+          const welcomeMessage = await roomChannel.sendMessage(
+            'Welcome ' + signupPlayers + ". Let's play!"
+          );
+          await commandKV.put('setup', {
+            lastUseAt: roomToUse,
+            lastUseWhen: Date.now()
+          });
+
+          await setupConstruct(
+            welcomeMessage,
+            kvItem.expansions,
+            kvItem.custom
+          );
+
+          // Get the embed
+          const lfgEmbed = message.embeds[0];
 
           // Add a thumbnail
           lfgEmbed.setTitle('Off to Mars!');
@@ -1591,8 +1888,6 @@ discord.on('MESSAGE_REACTION_ADD', async (evt) => {
           // Remove from kv list
           await lfgCheckKV.delete(message.id);
         }
-      } else {
-        console.log('The player is already in the list. No action is taken.');
       }
     }
   }
@@ -1654,6 +1949,9 @@ discord.on('MESSAGE_REACTION_ADD', async (evt) => {
           time: kvItem.time,
           playerWant: kvItem.playerWant,
           playerHave: newCount,
+          flexible: kvItem.flexible,
+          expansions: kvItem.expansions,
+          custom: kvItem.custom,
           signers: kvItem.signers
         });
 
@@ -1745,18 +2043,7 @@ const memesKv = new pylon.KVNamespace('tags');
 // Command a nd sub command to handle martian memes
 commands.subcommand(
   {
-    name: 'marsmeme',
-    filters: F.or(
-      F.isChannelId(CHANNELID_botTest),
-      F.isChannelId(CHANNELID_generalchat),
-      F.isChannelId(CHANNELID_gametalk),
-      F.isChannelId(CHANNELID_gameresult),
-      F.isChannelId(CHANNELID_phobos),
-      F.isChannelId(CHANNELID_deimos),
-      F.isChannelId(CHANNELID_europa),
-      F.isChannelId(CHANNELID_ganymede),
-      F.isChannelId(CHANNELID_titan)
-    )
+    name: 'marsmeme'
   },
   // Subcommand for setting meme, $marsmeme set key URL title
   (subcommand) => {
@@ -1872,30 +2159,26 @@ commands.subcommand(
 // Game option
 commands.raw(
   {
-    name: 'setup',
-    filters: F.or(
-      F.isChannelId(CHANNELID_botTest),
-      F.isChannelId(CHANNELID_phobos),
-      F.isChannelId(CHANNELID_deimos),
-      F.isChannelId(CHANNELID_europa),
-      F.isChannelId(CHANNELID_ganymede),
-      F.isChannelId(CHANNELID_titan)
-    )
+    name: 'setup'
   },
   async (message) => {
-    const commandStat = await commandKV.get('setup');
-    var diff = Date.now() - commandStat.lastUseWhen;
-    diff /= 1000 * 60; //(convert from millisec to min)
-    console.log(diff);
-    // 5 minute cool down
-    if (diff > 10 || commandStat.lastUseAt != message.channelId) {
-      await commandKV.put('setup', {
-        lastUseAt: message.channelId,
-        lastUseWhen: Date.now()
-      });
-      await setupConstruct(message);
-    } else {
-      message.reply('`$setup` command was recently used in this channel.');
+    const channel = await discord.getGuildTextChannel(message.channelId);
+    const parentId = channel.parentId;
+    if (parentId === CATEGORYID_CHATROOMS) {
+      const commandStat = await commandKV.get('setup');
+      var diff = Date.now() - commandStat.lastUseWhen;
+      diff /= 1000 * 60; //(convert from millisec to min)
+      console.log(diff);
+      // 5 minute cool down
+      if (diff > 0 || commandStat.lastUseAt != message.channelId) {
+        await commandKV.put('setup', {
+          lastUseAt: message.channelId,
+          lastUseWhen: Date.now()
+        });
+        await setupConstruct(message);
+      } else {
+        message.reply('`$setup` command was recently used in this channel.');
+      }
     }
   }
 );
@@ -1903,14 +2186,35 @@ commands.raw(
 // A key value store is per server. Let's create one now, and call it "tags".
 const lfgCheckKV = new pylon.KVNamespace('self destructing messages');
 
-// A simple command, !ping -> Pong!
+// https://discord.com/channels/737945098695999559/763003909005639681/765831952392781836
 commands.raw('debug', async (message) => {
   const bugmessage = await discord
-    .getGuildTextChannel('737945098695999562')
-    .then((c) => c?.getMessage('749888166751633429'));
+    .getGuildTextChannel('763003909005639681')
+    .then((c) => c?.getMessage('765831952392781836'));
+  if (bugmessage.webhookId == '763003577823133696') {
+    message.reply('Yes this is the github webhook message.');
+  }
   const embed = bugmessage.embeds[0];
-  console.log(embed.image.url);
-  message.reply('Debugging the message without picture');
+  const gitUpdateString = embed.description;
+  console.log(gitUpdateString);
+
+  // Extract data from Github webhook
+  const myRegexp = /\[\`(.*)\`\]\((.*)\) Merge pull request #([0-9]+)/g;
+  const match = myRegexp.exec(gitUpdateString);
+
+  console.log(match);
+
+  // If the update contains merge pull request, match[3] = prNumber
+  if (match != null) {
+    await message.reply('Merge Pull Request detected.');
+
+    // Update the KV
+    await serverStatusKV.put('lastUpdateMessage', {
+      commitNumber: match[1],
+      commitURL: match[2],
+      last_update_time: Date.now()
+    });
+  }
 });
 
 // A simple command, !ping -> Pong!
@@ -1944,10 +2248,8 @@ commands.raw('snap', async (message) => {
 // Jeep user id 626557246301667348
 
 // A cron function to check the list of lfg messages.
-pylon.tasks.cron('cleaning-snaps', '0 0/20 * * * * *', async () => {
-  console.log('log every 5 minutes');
+pylon.tasks.cron('LFG-delete-move', '0 1/20 * * * * *', async () => {
   const keyList = await lfgCheckKV.list();
-  console.log(keyList);
   for (let key of keyList) {
     console.log('LFG message in list.');
     console.log(key);
@@ -1993,6 +2295,10 @@ pylon.tasks.cron('cleaning-snaps', '0 0/20 * * * * *', async () => {
       await reorderedLFG.addReaction(yesReaction);
       await reorderedLFG.addReaction(noReaction);
 
+      if (game.flexible) {
+        await reorderedLFG.addReaction('🚀');
+      }
+
       // Update LFG KV item
 
       await lfgCheckKV.put(reorderedLFG.id, {
@@ -2000,6 +2306,9 @@ pylon.tasks.cron('cleaning-snaps', '0 0/20 * * * * *', async () => {
         time: lfgTime,
         playerWant: game.playerWant,
         playerHave: game.playerHave,
+        flexible: game.flexible,
+        expansions: game.expansions,
+        custom: game.custom,
         signers: game.signers
       });
       console.log('Added the reordered message to LFG KV.');
@@ -2039,72 +2348,128 @@ async function timerSet(message: discord.Message, timeLength: number) {
 }
 
 // Function to make set up message
-async function setupConstruct(message) {
+async function setupConstruct(message, expansions = 'any', custom = ' ') {
   const colorMessage = await message.reply(
-    'What color would you like to play as?'
+    '(1) What color would you like to play as?'
   );
   await colorMessage.addReaction('🔴');
   await colorMessage.addReaction('🟢');
-  await colorMessage.addReaction('🔵');
   await colorMessage.addReaction('🟡');
+  await colorMessage.addReaction('🔵');
   await colorMessage.addReaction('⚫');
   await colorMessage.addReaction('🟣');
 
-  const expansionMessage = await message.reply('What expansion should we use?');
-  await expansionMessage.addReaction('exp_prelude:743207309936689282');
-  await expansionMessage.addReaction('exp_venus:743207309723041823');
-  await expansionMessage.addReaction('exp_colony:743207309894877265');
-  await expansionMessage.addReaction('exp_turmoil:743207309525909597');
-  await expansionMessage.addReaction('exp_promo:743207309903265891');
+  if (expansions == 'any' || expansions == anyEmoji) {
+    const expansionMessage = await message.reply(
+      '(2) What expansion should we use?'
+    );
+    await expansionMessage.addReaction('exp_prelude:743207309936689282');
+    await expansionMessage.addReaction('exp_venus:743207309723041823');
+    await expansionMessage.addReaction('exp_colony:743207309894877265');
+    await expansionMessage.addReaction('exp_turmoil:743207309525909597');
+    await expansionMessage.addReaction('exp_promo:743207309903265891');
+  } else {
+    await message.reply(
+      '(2) These are the expansions we will use:\n' + expansions
+    );
+  }
 
-  const corpMessage = await message.reply('How many corporations?');
+  const corpMessage = await message.reply('(3) How many corporations?');
   await corpMessage.addReaction('1️⃣');
   await corpMessage.addReaction('2️⃣');
   await corpMessage.addReaction('3️⃣');
   await corpMessage.addReaction('4️⃣');
 
-  const draftMessage = await message.reply(
-    '1) No draft? 2) Round draft? 3) Round+initial draft?'
-  );
-  await draftMessage.addReaction('1️⃣');
-  await draftMessage.addReaction('2️⃣');
-  await draftMessage.addReaction('3️⃣');
+  if (custom.includes('-draft')) {
+    await message.reply('(4) We will play with **NO DRAFT**.');
+  } else if (custom.includes('full draft')) {
+    await message.reply('(4) We will play with **ROUND + INITIAL DRAFT**.');
+  } else if (custom.includes('draft')) {
+    await message.reply('(4) We will play with just **ROUND DRAFT**.');
+  } else {
+    const draftMessage = await message.reply(
+      '(4) What drafting format? 1) No draft, 2) Round draft, or 3) Round+initial draft.'
+    );
+    await draftMessage.addReaction('1️⃣');
+    await draftMessage.addReaction('2️⃣');
+    await draftMessage.addReaction('3️⃣');
+  }
 
-  const wgtChoices = await message.reply('Use world government terraforming?');
-  await wgtChoices.addReaction(yesReaction);
-  await wgtChoices.addReaction(noReaction);
+  if (custom.includes('-wgt')) {
+    await message.reply(
+      '(5) We will play **WITHOUT World Government Terraforming**.'
+    );
+  } else if (custom.includes('wgt')) {
+    await message.reply(
+      '(5) We will play **WITH World Government Terraforming**.'
+    );
+  } else {
+    const wgtChoices = await message.reply(
+      '(5) Use world government terraforming?'
+    );
+    await wgtChoices.addReaction(yesReaction);
+    await wgtChoices.addReaction(noReaction);
+  }
 
-  const maChoices = await message.reply('Randomize milestones and awards?');
-  await maChoices.addReaction(yesReaction);
-  await maChoices.addReaction(noReaction);
+  if (custom.includes('-random')) {
+    await message.reply(
+      '(6) We will play with **BOARD-DEFINED** milestones and awards.'
+    );
+  } else if (custom.includes('random')) {
+    await message.reply(
+      '(6) We will play with **RANDOMIZED** milestones and awards.'
+    );
+  } else {
+    const maChoices = await message.reply(
+      '(6) Randomize milestones and awards?'
+    );
+    await maChoices.addReaction(yesReaction);
+    await maChoices.addReaction(noReaction);
+  }
 
-  const vpChoices = await message.reply('Show real-time VP?');
-  await vpChoices.addReaction(yesReaction);
-  await vpChoices.addReaction(noReaction);
+  if (custom.includes('-vp')) {
+    await message.reply('(7) We will play **WITHOUT REAL-TIME VP**.');
+  } else if (custom.includes('vp')) {
+    await message.reply('(7) We will play **WITH REAL-TIME VP**.');
+  } else {
+    const vpChoices = await message.reply('(7) Show real-time VP?');
+    await vpChoices.addReaction(yesReaction);
+    await vpChoices.addReaction(noReaction);
+  }
 
   const tileChoices = await message.reply(
-    'Randomize board tiles (ocean location and tile placement bonus)?'
+    '(8) Randomize board tiles (ocean location and tile placement bonus)?'
   );
   await tileChoices.addReaction(yesReaction);
   await tileChoices.addReaction(noReaction);
 
-  const fastChoices = await message.reply(
-    'Fast mode (no end turn option, must take two actions)?'
-  );
-  await fastChoices.addReaction(yesReaction);
-  await fastChoices.addReaction(noReaction);
+  if (custom.includes('-fast')) {
+    await message.reply(
+      '(9) We will play with **NORMAL SPEED MODE**. We can take one or two actions.'
+    );
+  } else if (custom.includes('fast')) {
+    await message.reply('(9) We will play with **FAST MODE**.');
+  } else {
+    const fastChoices = await message.reply(
+      '(9) Fast mode (no end turn option, must take two actions)?'
+    );
+    await fastChoices.addReaction(yesReaction);
+    await fastChoices.addReaction(noReaction);
+  }
 
   const banChoices = await message.reply(
-    'Ban: <:tag_earth:742698267716091975> Point Luna, <:exp_colony:743207309894877265> Poseidon, <:cube_steel:743182342322913290> Manutech, <:tag_microbe:742698267590262834> Pharmacy Union, <:card:742908104332804168> Pluto? <:choice_no:742725736485355600> No ban?'
+    '(10) Ban: <:tag_earth:742698267716091975> Point Luna, <:exp_colony:743207309894877265> Poseidon, <:cube_steel:743182342322913290> Manutech, <:tag_space:742698267388805152> Toll Station, <:card:742908104332804168> Pluto? <:choice_no:742725736485355600> No ban?'
   );
   await banChoices.addReaction('tag_earth:742698267716091975');
   await banChoices.addReaction('exp_colony:743207309894877265');
   await banChoices.addReaction('cube_steel:743182342322913290');
-  await banChoices.addReaction('tag_microbe:742698267590262834');
+  await banChoices.addReaction('tag_space:742698267388805152');
   await banChoices.addReaction('card:742908104332804168');
   await banChoices.addReaction('choice_no:742725736485355600');
 
-  const communicationChoices = await message.reply('Text chat or voice chat?');
+  const communicationChoices = await message.reply(
+    '(11) Text chat or voice chat?'
+  );
   await communicationChoices.addReaction('⌨️');
   await communicationChoices.addReaction('🔊');
 }
@@ -2151,7 +2516,7 @@ async function lfgPost(
     pWant = 4;
   } else {
     playerString = 'any';
-    pWant = 3;
+    pWant = 5;
   }
 
   richEmbed.addField({
@@ -2309,7 +2674,7 @@ async function lfgPost(
   });
 
   // Only add fast field if specified
-  if (custom.includes('fast')) {
+  if (custom.includes('fast') && !custom.includes('-fast')) {
     richEmbed.addField({
       name: 'Fast Mode',
       value: yesEmoji,
@@ -2362,6 +2727,11 @@ async function lfgPost(
 
   await lfgEmbedMessage.addReaction(yesReaction);
   await lfgEmbedMessage.addReaction(noReaction);
+  var playerWantFlexible = false;
+  if (playercount == 23 || playercount == 34 || playercount == 0) {
+    await lfgEmbedMessage.addReaction('🚀');
+    playerWantFlexible = true;
+  }
 
   // Record this to the KV
   const currentTime = new Date();
@@ -2373,6 +2743,9 @@ async function lfgPost(
     time: Date.now(),
     playerWant: pWant,
     playerHave: 1,
+    flexible: playerWantFlexible,
+    expansions: expansionicon,
+    custom: custom,
     signers: [message.author.id]
   });
   console.log(await lfgCheckKV.items());
@@ -2386,19 +2759,7 @@ const timeKV = new pylon.KVNamespace('timer');
 // Command a nd sub command to handle timer
 commands.subcommand(
   {
-    name: 'timer',
-    filters: F.or(
-      F.isChannelId(CHANNELID_botTest),
-      F.isChannelId(CHANNELID_lfg),
-      F.isChannelId(CHANNELID_generalchat),
-      F.isChannelId(CHANNELID_gametalk),
-      F.isChannelId(CHANNELID_gameresult),
-      F.isChannelId(CHANNELID_phobos),
-      F.isChannelId(CHANNELID_deimos),
-      F.isChannelId(CHANNELID_europa),
-      F.isChannelId(CHANNELID_ganymede),
-      F.isChannelId(CHANNELID_titan)
-    )
+    name: 'timer'
   },
   // Subcommand for setting meme, $marsmeme set key URL title
   (subcommand) => {
@@ -2422,9 +2783,7 @@ commands.subcommand(
 
 // A cron function to check the list of lfg messages.
 pylon.tasks.cron('timer-check', '0 0/5 * * * * *', async () => {
-  console.log('log every 5 minutes');
   const keyList = await timeKV.list();
-  console.log(keyList);
   for (let key of keyList) {
     console.log(key);
     const timerItem = await timeKV.get(key);
@@ -2527,3 +2886,91 @@ function roleSquare(roles: string[]) {
     return '';
   }
 }
+
+/*============================
+    CHANGELOG FUNCTIONS
+============================*/
+
+const BAFOLT_CHANGELOG =
+  'https://raw.githubusercontent.com/wiki/bafolts/terraforming-mars/Changelog.md';
+const NUM_FETCH_LOG = 15;
+const MAX_OLD_LOG = 30;
+
+commands.subcommand(
+  {
+    name: 'changelog'
+  },
+  // Subcommand for setting meme, $marsmeme set key URL title
+  (subcommand) => {
+    subcommand.raw(
+      { name: 'clear', filters: discord.command.filters.canManageChannels() },
+      async (message) => {
+        await changelogKV.clear();
+        await message.reply('changelog KV is cleared.');
+      }
+    );
+
+    subcommand.default(
+      (ctx) => ({ days: ctx.integerOptional() }),
+      async (message, { days }) => {
+        days = days ?? 5;
+        //await timeKV.clear();
+        await fetchChangeLog(BAFOLT_CHANGELOG, days);
+      }
+    );
+  }
+);
+
+async function fetchChangeLog(changelog_url: string, log_days: number) {
+  // Fetch the changelog in markdown
+  const changelogResponse = await fetch(changelog_url).then((r) => r.text());
+  // Look at first 50 characters for debugging
+  console.log(changelogResponse.slice(0, 50));
+
+  // Parse with regular expression
+  // This regex capture title and then bullet points.
+  var myRegexp = /(\* .*)+/g;
+  var argsArray = [];
+  for (let i = 0; i < log_days; i++) {
+    var match = myRegexp.exec(changelogResponse);
+    if (match != null) {
+      argsArray.push(match[1].substring(2));
+    }
+  }
+
+  // Fetch old log
+  const oldLog = await changelogKV.get('recentLog');
+  const previous_dates = oldLog === undefined ? [] : oldLog.recent_dates;
+
+  const channel_changelog = await discord.getTextChannel(CHANNELID_CHANGELOG);
+
+  var recentLog = [];
+  // Reply back the log in reverse if it is not answered recently.
+  for (let i = argsArray.length - 1; i >= 0; i--) {
+    // Only send out message if the newly fetch data is not in the old log
+    if (!previous_dates.includes(argsArray[i])) {
+      console.log('This log has already been written.');
+      // Remove * in front, return in code block format.
+      //let icon = await getChangeLogIcon(argsArray[i]);
+      await channel_changelog.sendMessage(`\u200b\n🤖  ` + argsArray[i]);
+      recentLog.push(argsArray[i]);
+    }
+  }
+  // old in the front new in the back
+  var newLog = previous_dates.concat(recentLog);
+
+  newLog = newLog.length > MAX_OLD_LOG ? newLog.slice(-MAX_OLD_LOG) : newLog;
+  console.log(newLog);
+  // Update the lsit of recent dates
+  await changelogKV.put('recentLog', { recent_dates: newLog });
+  return;
+}
+
+//
+const changelogKV = new pylon.KVNamespace('changelog');
+
+// A cron task to wipe the search history every 6 hours '0 15 0/6 * * * *'
+pylon.tasks.cron('changelog-fetching', '0 15 0/6 * * * *', async () => {
+  console.log('log every 6 hours to clean up period searchers');
+  await fetchChangeLog(BAFOLT_CHANGELOG, NUM_FETCH_LOG);
+});

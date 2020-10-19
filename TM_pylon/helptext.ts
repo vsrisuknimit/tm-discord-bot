@@ -7,7 +7,17 @@ export const HELP_GENERAL = `Here are the commands available on Curiosity:
     \`$search\` = search for life (available in <#751040806386663456>)
     \`$poll\` = construct a poll (available in most places for chatting)
     \`$d\` = roll a die 
-    \`$flip\` = flip a coin 
+    \`$flip\` = flip a coin
+
+These commands get url of the game servers:
+    \`$main\` = main demo server
+    \`$beta\` = beta server for testing experimental features
+    \`$tournament\` = tournament server - no update for the duration of the tournament, more stable
+
+These commands get an explanation of fanmade contents:
+    \`$fanmade\` = all fan-made contents
+    \`$community\` = community cards (preludes, corps, and colonies)
+    \`$ares\` = Ares expansion
 
 These commands below are available only in <#737945098695999562>:
     \`$rover\` = check front facing camera of Curiosity rover  
@@ -16,10 +26,13 @@ These commands below are available only in <#737945098695999562>:
 
 Type \`$help [command]\` to ask for help with the specific command.`;
 
-export const HELPLFG = `**TL;DR**: \`$lfg\` can be used to send out a nicely formatted looking for game message. Type \`$lfg [# player] [expansion] [custom option]\` in <#739776164297441391>. For example, \`$lfg 4 pvcto wgt draft random vp\`.
+export const HELPLFG =
+  'Check out our guide on LFG at <https://discordapp.com/channels/737945098695999559/739776164297441391/763175486758322187>.';
+
+export const HELPLFG_FULL = `**TL;DR**: \`$lfg\` can be used to send out a nicely formatted looking for game message. Type \`$lfg [# player] [expansion] [custom option]\` in <#739776164297441391>. For example, \`$lfg 4 pvcto wgt draft random vp\`.
 
 **Details**
-**1st arg**: number of players wanted. 0 for any. 22 for 2 v 2 format.
+**1st arg**: number of players wanted. 0 for any. 23 or 34 for 2-3 and 3-4 players, respectively. 22 for 2 v 2 format.
 **2nd arg**: expansion, p for prelude, v for venus, c for colony, t for turmoil, o for promo. You can write in any order. You can also use 'all' or 'any' instead.
 **3rd+ args**: 'wgt' for world government terraforming, 'vp' for real-time vp, 'draft' for round draft, 'full draft' for both round and initial drafts, 'random' for randomized milestones and awards, 'fast' for fast mode (no end turn option). You can write these terms in any order. Default is 'any/i don't care' for all of these options. To turn anything off put '-' (minus sign) in front of the term like '-vp -wgt'. Use 'off' if you want turn everything off.
 
@@ -69,7 +82,7 @@ export const HELP_SEARCH = `\`$search\` to test your luck and search for life.`;
 export const HELP_CHANGELOG = `Check the changelog to see what is recently added to the repo: https://github.com/bafolts/terraforming-mars/wiki/Changelog`;
 
 export const HELP_DRAFT = `The initial draft is done in two phases:
-**Phase 1**: You get one pack of five project cards. Choose 1 card and pass the remaining to the left. Get 4 cards from players on your right, choose 1 and pass the remaining to the left. Repeat until you get 5 cards.
+**Phase 1**: You get one pack of five project cards. Choose 1 card and pass the remaining to the left. Get 4 cards from the player on your right, choose 1 and pass the remaining to the left. Repeat until you get 5 cards.
 **Phase 2**: You get another pack of five cards. Do the same as in phase 1 but pass the cards to the right instead.
 
 (If prelude expansion is used, 4 prelude cards are dealt at the beginning of phase 1, but not drafted until the end of phase 2. Pick 1 prelude cards, pass the remaining to the left. Repeat until you have 4 preludes.)
@@ -121,9 +134,20 @@ Distribution of POSITIVE global events
 +------------+-----+--------+-------+
 \`\`\``;
 
-export const HELP_DEMO = `http://terraforming-mars.herokuapp.com/`;
+export const HELP_MAIN = `http://terraforming-mars.herokuapp.com/`;
 
-export const HELP_BETA = `http://fplbg.com:8080`;
+export const HELP_TOURNY = 'https://tfm.msydevops.fr/';
+
+export const HELP_COMMUNITYCARDS =
+  'Here is an explanation of the community cards: <https://docs.google.com/document/u/1/d/e/2PACX-1vQCccn7kj-MEliV0bBGzkb-kxJvCBk0T9CuIMs6eWjhUIBSinemTaKjKK1ISI4tq2wzJX7wQvoBZcQe/pub>';
+
+export const HELP_ARES =
+  'Here is an explanation of the Ares fan-made expansion: <https://docs.google.com/document/d/1_Q7Udfl5mTnnXXUFBk2Fn0D35Xbyje_cM05Qhw37NUw/edit>';
+
+export const HELP_BETA = `\`$beta\` to show URL of the beta server.
+\`$beta set [URL] [comment]\` to set the URL of the beta server. Comment can be a text including spaces. No quotation needed.
+\`$beta open\` to OPEN the beta channel for testing. 
+\`$beta close\` to CLOSE the beta channel for testing.`;
 
 export const HELP_INFLUENCE = `Normally, you can achieve a maximum of 3 influence:
   - 1 for Chairman

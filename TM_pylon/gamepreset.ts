@@ -1,7 +1,7 @@
 export const playerPresets = new Map([
   [
     '437307434663411733', // ch0ka
-    { playercount: 3, expansion: 'all', custom: 'wgt random full draft' }
+    { playercount: 34, expansion: 'all', custom: 'wgt random full draft' }
   ],
   [
     '626557246301667348', // jeep
@@ -9,6 +9,14 @@ export const playerPresets = new Map([
       playercount: 3,
       expansion: 'pcvo',
       custom: 'wgt draft -vp'
+    }
+  ],
+  [
+    '479067402265559040', // smallman
+    {
+      playercount: 2,
+      expansion: 'pvco',
+      custom: 'full draft vp random fast "6 corps"'
     }
   ],
   [
@@ -26,9 +34,9 @@ export const playerPresets = new Map([
   [
     '143239366280478720', // KitsuneBlademaster
     {
-      playercount: 3,
-      expansion: 'pvco',
-      custom: 'wgt random full draft -vp fast'
+      playercount: 34,
+      expansion: 'all',
+      custom: 'wgt vp full draft fast'
     }
   ],
   [
@@ -45,6 +53,30 @@ export const playerPresets = new Map([
       playercount: 3,
       expansion: 'pvco',
       custom: 'vp full draft random fast -wgt'
+    }
+  ],
+  [
+    '542917300836368417', // treetop
+    {
+      playercount: 3,
+      expansion: 'pvco',
+      custom: 'wgt vp random full draft'
+    }
+  ],
+  [
+    '436930742044327946', // odinn21
+    {
+      playercount: 34,
+      expansion: 'all',
+      custom: 'full draft vp fast -wgt -random'
+    }
+  ],
+  [
+    '578140351156715540', // Kyshantry
+    {
+      playercount: 34,
+      expansion: 'all',
+      custom: 'fast wgt full draft random vp'
     }
   ]
 ]);

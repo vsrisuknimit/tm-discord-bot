@@ -362,6 +362,8 @@ export const cardID = new Map([
   ['sub-crust measurements', 'x28'],
   ['potatoes', 'x29'],
   ['meat industries', 'x30'],
+  ['asteroid rights', 'x34'],
+  ['bio printing facility', 'x36'],
   ['credicor', 'corp01'],
   ['ecoline', 'corp02'],
   ['helion', 'corp03'],
